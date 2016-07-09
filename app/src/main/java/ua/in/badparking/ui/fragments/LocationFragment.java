@@ -2,8 +2,8 @@ package ua.in.badparking.ui.fragments;
 
 import android.app.Activity;
 import android.location.Location;
+import android.location.LocationManager;
 import android.os.Bundle;
-import android.support.v4.app.Fragment;
 import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -16,13 +16,17 @@ import com.google.android.gms.maps.MapView;
 import com.google.android.gms.maps.MapsInitializer;
 import com.google.android.gms.maps.model.LatLng;
 
+import java.text.DecimalFormat;
+
 import ua.in.badparking.R;
-import ua.in.badparking.model.GeolocationService;
+import ua.in.badparking.services.ClaimState;
+import ua.in.badparking.services.GeolocationService;
+import ua.in.badparking.ui.activities.MainActivity;
 
 /**
  * @author Dima Kovalenko
  */
-public class LocationFragment extends Fragment {
+public class LocationFragment extends BaseFragment {
 
     private static final String TAG = LocationFragment.class.getName();
 
@@ -60,15 +64,24 @@ public class LocationFragment extends Fragment {
                 setCenter(new LatLng(location.getLatitude(), location.getLongitude()));
             }
         });
+        rootView.findViewById(R.id.next_button).setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                LocationManager locManager = (LocationManager)getActivity().getSystemService(getActivity().LOCATION_SERVICE);
+                Location location = locManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER);
+
+                if(location != null) {
+                    DecimalFormat df = new DecimalFormat("#.######");
+                    ClaimState.INST.getClaim().setLatitude(df.format(location.getLatitude()).replace(",", "."));
+                    ClaimState.INST.getClaim().setLongitude(df.format(location.getLongitude()).replace(",", "."));
+                }
+                ((MainActivity)getActivity()).moveToNext();
+            }
+        });
+
+        setCenter(new LatLng(50.45, 30.523611));
 
         return rootView;
-    }
-
-    @Override
-    public void onStart() {
-        super.onStart();
-        boolean locationObsolete = GeolocationService.INST.isLocationObsolete();
-        mapHolder.setVisibility(locationObsolete ? View.GONE : View.VISIBLE);
     }
 
     public void hideKeyboard(Activity activity) {

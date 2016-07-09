@@ -6,16 +6,17 @@ import android.content.res.Resources;
 import android.database.Cursor;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.hardware.Camera;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Environment;
 import android.provider.MediaStore;
-import android.support.v4.app.Fragment;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.ArrayAdapter;
+import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.Toast;
 
@@ -24,13 +25,14 @@ import java.io.IOException;
 import java.util.Arrays;
 
 import ua.in.badparking.R;
-import ua.in.badparking.model.ClaimService;
+import ua.in.badparking.ui.activities.MainActivity;
+import ua.in.badparking.ui.utils.CameraPreview;
 
 /**
  * @author Dima Kovalenko
  * @author Vadik Kovalsky
  */
-public class CaptureFragment extends Fragment implements View.OnClickListener {
+public class CaptureFragment extends BaseFragment implements View.OnClickListener {
 
     private static final int REQUEST_IMAGE_CAPTURE = 356;
     private static final int PICK_IMAGE = 357;
@@ -47,8 +49,12 @@ public class CaptureFragment extends Fragment implements View.OnClickListener {
     private boolean isSecondHasImage;
     private File firstImage;
     private File secondImage;
+    private View nextButton;
 
-    private View sendButton;
+    // Native camera.
+    private Camera mCamera;
+    // View to display the camera output.
+    private CameraPreview mPreview;
 
     public static CaptureFragment newInstance() {
         return new CaptureFragment();
@@ -71,21 +77,17 @@ public class CaptureFragment extends Fragment implements View.OnClickListener {
         firstHolder = rootView.findViewById(R.id.first_image_holder);
         secondHolder = rootView.findViewById(R.id.second_image_holder);
         takePhotoButton = rootView.findViewById(R.id.snap);
-        sendButton = rootView.findViewById(R.id.send);
+        nextButton = rootView.findViewById(R.id.next_button);
 
         firstImageView.setOnClickListener(this);
         secondImageView.setOnClickListener(this);
         closeFirst.setOnClickListener(this);
         closeSecond.setOnClickListener(this);
         takePhotoButton.setOnClickListener(this);
-        sendButton.setOnClickListener(this);
+        nextButton.setOnClickListener(this);
 
-        rootView.post(new Runnable() {
-            @Override
-            public void run() {
-                Toast.makeText(getActivity(), R.string.shoot_trespass, Toast.LENGTH_LONG).show();
-            }
-        });
+        // Create our Preview view and set it as the content of our activity.
+        boolean opened = safeCameraOpenInView(rootView);
 
         return rootView;
     }
@@ -100,7 +102,7 @@ public class CaptureFragment extends Fragment implements View.OnClickListener {
                 firstHolder.setVisibility(View.VISIBLE);
                 setPic(firstImageView, firstImage.getPath());
                 isFirstHasImage = true;
-                Toast.makeText(getActivity(), R.string.shoot_plates, Toast.LENGTH_LONG).show();
+                Toast.makeText(getActivity(), R.string.capture_plates, Toast.LENGTH_LONG).show();
 
             } else {
                 takePhotoButton.setVisibility(View.GONE);
@@ -117,7 +119,7 @@ public class CaptureFragment extends Fragment implements View.OnClickListener {
                     firstImage = file;
                     setPic(firstImageView, firstImage.getPath());
                     isFirstHasImage = true;
-                    Toast.makeText(getActivity(), R.string.shoot_plates, Toast.LENGTH_LONG).show();
+                    Toast.makeText(getActivity(), R.string.capture_plates, Toast.LENGTH_LONG).show();
                 } else {
                     secondHolder.setVisibility(View.VISIBLE);
                     secondImage = file;
@@ -127,13 +129,13 @@ public class CaptureFragment extends Fragment implements View.OnClickListener {
             } else
                 Toast.makeText(getActivity(), getString(R.string.error), Toast.LENGTH_LONG).show();
         }
-        sendButton.setVisibility((isFirstHasImage && isSecondHasImage) ? View.VISIBLE : View.GONE);
     }
 
     @Override
     public void onDestroy() {
         super.onDestroy();
         releaseAll();
+        releaseCameraAndPreview();
     }
 
     public void hideKeyboard(Activity activity) {
@@ -157,26 +159,64 @@ public class CaptureFragment extends Fragment implements View.OnClickListener {
                 releaseSecondImage();
                 break;
             case R.id.snap:
+//                capture();
                 openGallery();
-//                openCamera();
                 break;
-            case R.id.send:
-                hideKeyboard(getActivity());
-                if (!isFirstHasImage) {
-                    Toast.makeText(getActivity(), R.string.shoot_trespass, Toast.LENGTH_LONG).show();
-                } else if (!isSecondHasImage) {
-                    Toast.makeText(getActivity(), R.string.shoot_plates, Toast.LENGTH_LONG).show();
-                } else {
-                    ClaimService.INST.getClaim().clearPhotos();
-                    if (isFirstHasImage) {
-                        ClaimService.INST.getClaim().addPhoto(firstImage);
-                    }
-                    if (isSecondHasImage) {
-                        ClaimService.INST.getClaim().addPhoto(secondImage);
-                    }
-                }
+            case R.id.next_button:
+                ((MainActivity)getActivity()).moveToNext();
                 break;
         }
+    }
+
+    private void capture() {
+
+    }
+
+    /**
+     * Safe method for getting a camera instance.
+     *
+     * @return
+     */
+    public static Camera getCameraInstance() {
+        Camera c = null;
+        try {
+            c = Camera.open(); // attempt to get a Camera instance
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return c; // returns null if camera is unavailable
+    }
+
+    @Override
+    public void onPause() {
+        super.onPause();
+    }
+
+    /**
+     * Clear any existing preview / camera.
+     */
+    private void releaseCameraAndPreview() {
+
+        if (mCamera != null) {
+            mCamera.stopPreview();
+            mCamera.release();
+            mCamera = null;
+        }
+        if (mPreview != null) {
+            mPreview.destroyDrawingCache();
+            mPreview.mCamera = null;
+        }
+    }
+
+    private boolean safeCameraOpenInView(View view) {
+        boolean qOpened = false;
+        releaseCameraAndPreview();
+        mCamera = getCameraInstance();
+        qOpened = (mCamera != null);
+        mPreview = new CameraPreview(getActivity().getBaseContext(), mCamera);
+        FrameLayout preview = (FrameLayout)view.findViewById(R.id.cameraHolder);
+        preview.addView(mPreview);
+        return qOpened;
     }
 
     // Photo stuff
